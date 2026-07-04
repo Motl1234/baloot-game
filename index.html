@@ -149,6 +149,7 @@ select.field{margin-top:6px}
 .bidBtn.sun{background:linear-gradient(180deg,var(--gold2),var(--gold3));color:#231903}
 .bidBtn.hokum{background:linear-gradient(180deg,#1b7c62,#0d5443);color:#eafff5}
 .bidBtn.pass{background:#22304d;color:#aebcd6;border:1px solid var(--line)}
+.bidBtn.ashkal{background:linear-gradient(180deg,#7a5fd0,#4e3a96);color:#efe9ff}
 .bidBtn:disabled{opacity:.4;cursor:not-allowed}
 .bidBtn .s{font-size:19px}
 .bidFloor{display:flex;align-items:center;justify-content:center;gap:14px;margin:2px 0 12px;
@@ -377,7 +378,8 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
       <h2>📜 طريقة اللعب</h2>
       <p>البلوت لعبة فريقين (أنت وشريكك مقابل الخصمين). الورق 32 ورقة، ولكل لاعب 8. الهدف: الوصول إلى <b>152 نقطة</b> (أبناط).</p>
       <h3>الشراء</h3>
-      <p>توزَّع 5 أوراق وتُكشف ورقة. في الجولة الأولى: <b>حكم</b> بنوع الورقة المكشوفة، أو <b>صن</b> (بدون حكم)، أو <b>بس</b>. الصن يغطّي الحكم. إذا الكل «بس» تأتي جولة ثانية: حكم بأي نوع آخر أو صن، وإلا يُعاد التوزيع. الشاري يأخذ الورقة المكشوفة، ويجب أن يجمع فريقه أكثر من الخصم وإلا خسر كل شيء.</p>
+      <p>توزَّع 5 أوراق وتُكشف ورقة. في الجولة الأولى: <b>حكم</b> بنوع الورقة المكشوفة، أو <b>صن</b> (بدون حكم)، أو <b>أشكل</b>، أو <b>بس</b>. الصن يغطّي الحكم. إذا الكل «بس» تأتي جولة ثانية: حكم بأي نوع آخر أو صن، وإلا يُعاد التوزيع. الشاري يأخذ الورقة المكشوفة، ويجب أن يجمع فريقه أكثر من الخصم وإلا خسر كل شيء.</p>
+      <p><b>أشكل 🔄</b>: مثل الصن تمامًا، لكن ورقة الشراء تروح لشريكك بدلك (مفيد إذا الورقة قوية وأنت مستغنٍ عنها). متاح فقط لأول لاعبَين في الجولة الأولى — لأن شريك اللاعب الثالث والرابع يكون قد تكلّم قبلهم.</p>
       <h3>ترتيب الورق ونقاطه</h3>
       <table class="sc">
         <tr><th></th><th colspan="8">من الأقوى إلى الأضعف</th></tr>
@@ -464,6 +466,15 @@ function doBid(p,bid){
   if((G.phase!=='bid1'&&G.phase!=='bid2')||p!==G.turn||!bid)return;
   snd('click');
   if(bid.t==='sun'){G.bidLog[p]='صن!';push();finalizeBuy(p,'sun',null);return;}
+  /* أشكل: صن لكن ورقة الشراء تروح للشريك — متاح لأول لاعبَين في الجولة الأولى فقط */
+  if(bid.t==='ashkal'){
+    if(G.phase!=='bid1'||G.acted>=2)return;
+    const partner=(p+2)%4;
+    G.bidLog[p]='أشكل!'; push();
+    toast(`${G.names[p]} أشكل 🔄 — اللعب صن وورقة الشراء لشريكه ${G.names[partner]}`);
+    finalizeBuy(partner,'sun',null);
+    return;
+  }
   if(bid.t==='hokum'){
     if(G.phase==='bid2'){
       if(!SUITS.includes(bid.suit)||bid.suit===G.floor.s)return;
@@ -715,7 +726,11 @@ function botBid(p){
   if(G.phase==='bid1'){
     const hs=evalHokum([...h,G.floor],G.floor.s), ss=evalSun(h);
     const canH=G.pendingBuyer===null;
-    if(ss>=42+adj&&ss>=hs)bid={t:'sun'};
+    if(ss>=42+adj&&ss>=hs){
+      /* أشكل إذا كانت ورقة الشراء قوية وتنفع الشريك أكثر */
+      bid=(G.acted<2&&VAL_SUN[G.floor.r]>=10&&h.filter(c=>c.s===G.floor.s).length<=1&&sk>=5)
+        ?{t:'ashkal'}:{t:'sun'};
+    }
     else if(canH&&hs>=38+adj)bid={t:'hokum'};
     else if(!canH&&TEAM(G.pendingBuyer)!==TEAM(p)&&ss>=46+adj)bid={t:'sun'};
   }else{
@@ -829,7 +844,8 @@ function buildView(s){
   const bidPhase=G.phase==='bid1'||G.phase==='bid2';
   let act=null;
   if(G.turn===s&&bidPhase)
-    act={type:'bid',round:G.phase==='bid1'?1:2,floorSuit:G.floor.s,hokumOpen:G.pendingBuyer===null};
+    act={type:'bid',round:G.phase==='bid1'?1:2,floorSuit:G.floor.s,hokumOpen:G.pendingBuyer===null,
+         ashkalOk:G.phase==='bid1'&&G.acted<2};
   else if(G.turn===s&&G.phase==='play'&&G.trick.length<4){
     const info=legalInfo(s);
     act={type:'play',legal:info.legal.map(c=>c.id),
@@ -1017,12 +1033,14 @@ function renderBid(v){
   html+=`<button class="bidBtn sun" data-bid="sun">صن ☀️</button>`;
   if(a.round===1){
     html+=`<button class="bidBtn hokum" data-bid="hokum" ${a.hokumOpen?'':'disabled'}>حكم <span class="s">${SCHAR[a.floorSuit]}</span></button>`;
+    if(a.ashkalOk)html+=`<button class="bidBtn ashkal" data-bid="ashkal">أشكل 🔄</button>`;
   }else{
     for(const s of SUITS)if(s!==a.floorSuit)
       html+=`<button class="bidBtn hokum" data-bid="hokum" data-suit="${s}">حكم <span class="s">${SCHAR[s]}</span></button>`;
   }
   html+=`<button class="bidBtn pass" data-bid="pass">بس</button></div>
-    <div class="hint" style="margin:8px 0 0">صن: بدون طرنيب والنقاط مضاعفة (٢٦ بنط) • حكم: الطرنيب يقص كل الأنواع (١٦ بنط) • بس: تمرير الدور</div>
+    <div class="hint" style="margin:8px 0 0">صن: بدون طرنيب والنقاط مضاعفة (٢٦ بنط) • حكم: الطرنيب يقص كل الأنواع (١٦ بنط)${
+      a.round===1&&a.ashkalOk?' • أشكل: نفس الصن لكن ورقة الشراء تروح لشريكك':''} • بس: تمرير الدور</div>
     <button class="hintBtn" id="btnAdvise" style="margin-top:8px">🤔 وش تنصحني؟</button>`;
   bp.innerHTML=html;
   bp.querySelectorAll('.bidBtn').forEach(b=>b.addEventListener('click',()=>{
@@ -1039,7 +1057,7 @@ function adviseBid(){
   let msg;
   if(a.round===1){
     const hs=evalHokum(v.floor?[...h,v.floor]:h,a.floorSuit), ss=evalSun(h);
-    if(ss>=42&&ss>=hs)msg='عندك إكّات وعشرات قوية — أنصحك: صن ☀️';
+    if(ss>=42&&ss>=hs)msg='عندك إكّات وعشرات قوية — أنصحك: صن ☀️'+(a.ashkalOk?' (أو أشكل 🔄 إذا تبي ورقة الشراء تروح لشريكك)':'');
     else if(a.hokumOpen&&hs>=38)msg='أوراقك قوية بنوع '+SUIT_AR[a.floorSuit]+' — أنصحك: حكم';
     else msg='يدك عادية — الأنسب: «بس» وخلّ غيرك يغامر';
   }else{

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="description" content="لعبة بلوت كاملة في المتصفح — لعب فردي ضد الذكاء أو عن بعد مع صديق بدون سيرفر">
+<meta name="description" content="لعبة بلوت كاملة في المتصفح - لعب فردي ضد الذكاء او عن بعد مع صديق بدون سيرفر">
 <title>ديوانية بلوت</title>
 <style>
 :root{
@@ -151,6 +151,11 @@ select.field{margin-top:6px}
 .bidBtn.pass{background:#22304d;color:#aebcd6;border:1px solid var(--line)}
 .bidBtn:disabled{opacity:.4;cursor:not-allowed}
 .bidBtn .s{font-size:19px}
+.bidFloor{display:flex;align-items:center;justify-content:center;gap:14px;margin:2px 0 12px;
+  background:rgba(8,45,34,.5);border:1px solid rgba(216,177,92,.45);border-radius:12px;padding:10px 14px}
+.bidFloor .card{width:calc(var(--cwm)*1.3);height:calc(var(--cwm)*1.3*1.45);animation:glowF 1.6s ease-in-out infinite;flex:none}
+.bfTxt{font-size:12.5px;color:#c2cfe4;line-height:1.9;text-align:right;max-width:220px}
+.bfTxt b{font-size:17px;color:var(--gold2)}
 
 #toasts{position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;
   gap:7px;align-items:center;pointer-events:none;width:100%}
@@ -826,7 +831,7 @@ function push(){
 }
 
 /* ================= الرسم ================= */
-let VIEW=null, sentAct=false;
+let VIEW=null, sentAct=false, wasMyTurn=false;
 const trickSlots=[...document.querySelectorAll('#trick .slot')];
 function cardEl(c,back){
   const d=document.createElement('div');
@@ -838,6 +843,9 @@ function cardEl(c,back){
 }
 function render(v){
   VIEW=v; sentAct=false;
+  const myTurnNow=!!v.act;
+  if(myTurnNow&&!wasMyTurn)snd('turn');
+  wasMyTurn=myTurnNow;
   const myT=TEAM(v.seat);
   $('#scUs').textContent=v.match[myT];
   $('#scThem').textContent=v.match[1-myT];
@@ -884,7 +892,7 @@ function render(v){
         e.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' ')uiPlay(c.id);});
       }else{
         e.classList.add('dis');
-        e.addEventListener('click',()=>toast('🚫 '+(v.act.hint||'هذه الورقة غير مسموحة الآن')));
+        e.addEventListener('click',()=>{snd('bad');toast('🚫 '+(v.act.hint||'هذه الورقة غير مسموحة الآن'));});
       }
     }
     mh.appendChild(e);
@@ -966,8 +974,11 @@ function renderBid(v){
   bp.classList.remove('hidden');
   const a=v.act;
   let html=`<div class="q">دورك — قرار الشراء</div>
-    <div class="hint" style="margin:0 0 8px">ورقة الشراء: <b style="color:var(--gold2)">${SUIT_AR[a.floorSuit]}</b>${
-      a.round===1?' — إذا قلت «حكم» يصير نوعها هو الطرنيب وتأخذ الورقة':' — النوع محروق: تقدر تشتري حكم بنوع آخر أو صن'}</div>
+    <div class="bidFloor">
+      <div id="bfCard"></div>
+      <div class="bfTxt">👇 هذه ورقة الشراء<br><b>${SUIT_AR[a.floorSuit]}</b><br>${
+        a.round===1?'إذا قلت «حكم» يصير نوعها هو الطرنيب وتأخذها ليدك':'نوعها محروق — اشترِ حكم بنوع آخر أو صن'}</div>
+    </div>
     <div class="bidRow">`;
   html+=`<button class="bidBtn sun" data-bid="sun">صن ☀️</button>`;
   if(a.round===1){
@@ -985,6 +996,7 @@ function renderBid(v){
     bp.classList.add('hidden'); uiBid(bid);
   }));
   $('#btnAdvise').addEventListener('click',adviseBid);
+  if(v.floor)$('#bfCard').appendChild(cardEl(v.floor));
 }
 /* نصيحة الشراء للمبتدئ — تشتغل حتى عند الضيف لأنها تعتمد على يدك فقط */
 function adviseBid(){
@@ -1128,17 +1140,64 @@ function toast(msg){
   setTimeout(()=>t.remove(),3100);
   if(NET.role==='host'&&NET.connected)netSend({t:'toast',msg});
 }
-let AC=null,muted=false;
+/* ===== أصوات مركّبة (WebAudio) ===== */
+let AC=null,muted=false,noiseBuf=null;
+function ac(){
+  AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==='suspended')AC.resume();
+  return AC;
+}
+function getNoise(a){
+  if(!noiseBuf){
+    noiseBuf=a.createBuffer(1,Math.floor(a.sampleRate*0.5),a.sampleRate);
+    const d=noiseBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  }
+  return noiseBuf;
+}
+function tone(a,f,t0,dur,type,vol,slide){
+  const o=a.createOscillator(),g=a.createGain();
+  o.type=type||'sine';
+  o.frequency.setValueAtTime(f,t0);
+  if(slide)o.frequency.exponentialRampToValueAtTime(slide,t0+dur);
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(vol,t0+0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  o.connect(g);g.connect(a.destination);
+  o.start(t0);o.stop(t0+dur+0.05);
+}
+function swoosh(a,t0,dur,vol,f1,f2){
+  const s=a.createBufferSource();s.buffer=getNoise(a);s.loop=true;
+  const flt=a.createBiquadFilter();flt.type='bandpass';flt.Q.value=1.1;
+  flt.frequency.setValueAtTime(f1,t0);
+  flt.frequency.exponentialRampToValueAtTime(f2,t0+dur);
+  const g=a.createGain();
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(vol,t0+dur*0.3);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  s.connect(flt);flt.connect(g);g.connect(a.destination);
+  s.start(t0);s.stop(t0+dur+0.05);
+}
 function snd(k){
   if(muted)return;
   try{
-    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
-    const f={card:[520,.06],click:[300,.05],trick:[660,.13],round:[440,.3],win:[880,.5]}[k]||[400,.05];
-    const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
-    o.connect(g);g.connect(AC.destination);
-    o.frequency.value=f[0];
-    g.gain.setValueAtTime(.07,t);g.gain.exponentialRampToValueAtTime(.001,t+f[1]);
-    o.start(t);o.stop(t+f[1]);
+    const a=ac(),t=a.currentTime;
+    switch(k){
+      case 'card':  /* سحبة ورقة على اللبّاد + طقّة */
+        swoosh(a,t,0.16,0.45,900,2600); tone(a,190,t+0.10,0.06,'triangle',0.12); break;
+      case 'click': tone(a,340,t,0.05,'triangle',0.12); break;
+      case 'turn':  /* تنبيه «دورك» — نغمتان صاعدتان */
+        tone(a,659,t,0.11,'sine',0.14); tone(a,880,t+0.12,0.18,'sine',0.14); break;
+      case 'trick': /* كسب الأكلة */
+        tone(a,392,t,0.12,'triangle',0.16); tone(a,523,t+0.10,0.22,'triangle',0.16); break;
+      case 'bad':   /* حركة ممنوعة */
+        tone(a,230,t,0.18,'sawtooth',0.07,150); break;
+      case 'round': /* نهاية الجولة — أربع نغمات */
+        [262,330,392,523].forEach((f,i)=>tone(a,f,t+i*0.12,0.3,'triangle',0.13)); break;
+      case 'win':   /* الفوز بالصكّة — لحن صاعد */
+        [523,659,784,1047,1319].forEach((f,i)=>tone(a,f,t+i*0.15,0.5,'triangle',0.15)); break;
+      default: tone(a,400,t,0.05,'sine',0.1);
+    }
   }catch(_){}
 }
 function confetti(){

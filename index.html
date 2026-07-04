@@ -244,6 +244,11 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
 .race.us i{background:linear-gradient(270deg,#177a60,#2fbf92)}
 .race.them i{background:linear-gradient(270deg,#8a4a44,#c05353)}
 .card.suggest{outline:3px solid #2fbf92;outline-offset:-1px;transform:translateY(-12px);z-index:3}
+/* عدّاد الدور */
+.tmr{position:absolute;top:-8px;right:-10px;background:linear-gradient(180deg,var(--gold2),var(--gold3));
+  color:#231903;font-size:12px;font-weight:900;border-radius:50%;width:26px;height:26px;
+  display:grid;place-items:center;font-variant-numeric:tabular-nums;box-shadow:0 2px 8px rgba(0,0,0,.5);z-index:5}
+.tmr.urgent{background:linear-gradient(180deg,#e0938c,var(--sadu));color:#fff;animation:pulse 0.8s infinite}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-height:620px){.sv2{top:1%}.av{width:38px;height:38px;font-size:17px}#hud{padding-top:6px}}
 </style>
@@ -314,6 +319,7 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
       <div class="chip" id="trickChip" title="الأكلات">🂠 <span id="trickCnt">0 - 0</span></div>
       <div class="chip" id="rpChip" title="نقاط أوراق هذه الجولة">🎯 <span id="rp">0 - 0</span></div>
       <div class="chip" id="lvlChip" title="مستوى الخصوم">🤖 <span id="lvlNum">1</span></div>
+      <button class="iconBtn" id="btnHint" title="مساعدة — وش ألعب؟">💡</button>
       <button class="iconBtn" id="btnEmoji" title="إيموجي">😊</button>
       <button class="iconBtn hidden" id="btnChat" title="دردشة" style="position:relative">💬<span class="badgeN hidden" id="chatBadge">0</span></button>
       <button class="iconBtn" id="btnSnd" title="الصوت">🔊</button>
@@ -341,7 +347,6 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
         <div class="slot t0"></div><div class="slot t1"></div><div class="slot t2"></div><div class="slot t3"></div>
       </div>
       <div id="bidPanel" class="hidden"></div>
-      <div id="hintBar" class="hidden"></div>
       <div id="projPanel" class="hidden"></div>
       <div id="emojiPal" class="hidden"></div>
       <div class="seat sv0" id="seatV0">
@@ -390,7 +395,7 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
         <li><b>بلوت</b>: شايب وبنت الحكم بيد واحدة = 2. الفريق صاحب المشروع الأقوى يحسب مشاريعه فقط.</li>
       </ul>
       <h3>مساعدات المبتدئ</h3>
-      <p>الشريط الأزرق فوق أوراقك يشرح القانون المطبّق الآن، والأوراق الممنوعة تظهر باهتة (اضغطها يطلع السبب). زر «وش تنصحني؟» عند الشراء وزر «اقترح لي ورقة» أثناء اللعب يوجّهونك. الورقة الرابحة على الأرض عليها إطار ذهبي و👑. المشروع يظهر لك بلوحة بنفسجية أول أكلة: تعلنه أو تخفيه — وإذا لعبت بدون قرار نعلنه لك تلقائيًا.</p>
+      <p>زر 💡 في الشريط العلوي يشرح لك القانون المطبّق الآن ويقترح أنسب ورقة — اضغطه متى ما احترت. الأوراق الممنوعة تظهر باهتة (اضغطها يطلع السبب). الورقة الرابحة على الأرض عليها إطار ذهبي و👑. المشروع يظهر لك بلوحة بنفسجية أول أكلة: تعلنه أو تخفيه — وإذا لعبت بدون قرار نعلنه لك تلقائيًا. عند اللعب عن بعد مع أشخاص حقيقيين: لكل لاعب ٤٥ ثانية لدوره، وإذا انتهت يُلعب عنه تلقائيًا.</p>
       <p class="hint">نسخة رقمية مبسطة: بدون دبل/قهوة. مستوى الخصوم ١–١٠ يرتفع تلقائيًا كل ما فزت بصكّة وينزل إذا خسرت، وتقدر تثبته من القائمة.</p>
       <button class="btn gold" id="btnCloseRules">فهمت ✔</button>
     </div>
@@ -427,7 +432,8 @@ let LVL=Math.min(10,Math.max(1,+(store('lvl')||3)||3));
 function skillOf(p){return p===2?Math.max(LVL,4):LVL;}
 
 let CTRL=['human','bot','bot','bot'];   // human | bot | remote
-const G={phase:null,tok:0,names:[...BOT_NAMES],match:[0,0]};
+const G={phase:null,tok:0,ttok:0,timerEnd:0,names:[...BOT_NAMES],match:[0,0]};
+const TURN_SECS=45;
 const NET={role:null,pc:null,dc:null,seat:2,connected:false,guestName:''};
 
 function mkDeck(){const d=[];for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:r+s});return d;}
@@ -777,8 +783,27 @@ function chooseBotCard(p,sk){
   return pick;
 }
 function botPlay(p){doPlay(p,chooseBotCard(p,skillOf(p)).id);}
+/* ===== مؤقّت الدور (٤٥ ثانية) — فقط عند اللعب مع أشخاص حقيقيين ===== */
+let turnTimer=null;
+function armTurnTimer(){
+  clearTimeout(turnTimer); turnTimer=null; G.timerEnd=0; G.ttok++;
+  if(NET.role!=='host'||!NET.connected)return;
+  if(G.turn<0)return;
+  const c=CTRL[G.turn];
+  if(c!=='human'&&c!=='remote')return;
+  if(G.phase!=='bid1'&&G.phase!=='bid2'&&G.phase!=='play')return;
+  G.timerEnd=Date.now()+TURN_SECS*1000;
+  const tk=G.ttok, tn=G.turn, ph=G.phase;
+  turnTimer=setTimeout(()=>{
+    if(G.ttok!==tk||G.turn!==tn||G.phase!==ph)return;
+    toast(`⏰ انتهى وقت ${G.names[tn]} — لُعب عنه تلقائيًا`);
+    if(ph==='play'){const cc=chooseBotCard(tn,6);if(cc)doPlay(tn,cc.id);}
+    else doBid(tn,{t:'pass'});
+  },TURN_SECS*1000);
+}
 /* ===== جدولة الأدوار ===== */
 function step(){
+  armTurnTimer();
   if(G.turn<0||!G.phase)return;
   const c=CTRL[G.turn];
   if(c==='bot'){
@@ -822,7 +847,8 @@ function buildView(s){
     counts:G.hands?G.hands.map(h=>h.length):[0,0,0,0],
     trick:G.trick||[], teamTricks:G.teamTricks||[0,0], teamPts:G.teamPts||[0,0],
     match:[...G.match], bidLog:G.bidLog||['','','',''],
-    act, projAsk, lvl:LVL, summary:G.summary, over:G.over
+    act, projAsk, lvl:LVL, summary:G.summary, over:G.over,
+    timerSecs:G.timerEnd?Math.max(0,Math.ceil((G.timerEnd-Date.now())/1000)):null
   };
 }
 function push(){
@@ -897,20 +923,7 @@ function render(v){
     }
     mh.appendChild(e);
   }
-  /* شريط الإرشاد — يشرح القانون المطبق الآن */
-  const hb=$('#hintBar');
-  if(canPlay&&v.act.hint){
-    hb.classList.remove('hidden');
-    hb.innerHTML=`<span>💡 ${v.act.hint}</span>`+
-      (NET.role!=='guest'?`<button class="hintBtn" id="btnSuggest">اقترح لي ورقة</button>`:'');
-    const bs=$('#btnSuggest');
-    if(bs)bs.addEventListener('click',()=>{
-      const c=chooseBotCard(0,10); if(!c)return;
-      document.querySelectorAll('#myHand .card').forEach(x=>x.classList.remove('suggest'));
-      const el2=document.querySelector(`#myHand .card[data-id="${c.id}"]`);
-      if(el2){el2.classList.add('suggest');toast('💡 أنسب ورقة: '+c.r+' '+SCHAR[c.s]);}
-    });
-  }else hb.classList.add('hidden');
+  renderTimer(v);
   /* لوحة إعلان المشروع */
   const pp=$('#projPanel');
   if(v.projAsk){
@@ -938,6 +951,27 @@ function render(v){
   renderBid(v);
   renderSummary(v);
   renderOver(v);
+}
+/* عدّاد ٤٥ ثانية فوق صاحب الدور — العدّ محلي والتنفيذ عند المضيف */
+let tmrInt=null,tmrTarget=0;
+function renderTimer(v){
+  document.querySelectorAll('.tmr').forEach(x=>x.remove());
+  clearInterval(tmrInt); tmrInt=null;
+  if(v.timerSecs==null||v.timerSecs<=0||v.turn<0)return;
+  const vis=(v.turn-v.seat+4)%4;
+  const wrap=document.querySelector('#seatV'+vis+' .avwrap');
+  if(!wrap)return;
+  const d=document.createElement('div');
+  d.className='tmr'+(v.timerSecs<=10?' urgent':'');
+  d.textContent=v.timerSecs;
+  wrap.appendChild(d);
+  tmrTarget=Date.now()+v.timerSecs*1000;
+  tmrInt=setInterval(()=>{
+    const s=Math.max(0,Math.ceil((tmrTarget-Date.now())/1000));
+    d.textContent=s;
+    d.classList.toggle('urgent',s<=10);
+    if(s<=0){clearInterval(tmrInt);tmrInt=null;}
+  },500);
 }
 function renderTrick(v){
   for(let vis=0;vis<4;vis++){
@@ -1336,8 +1370,10 @@ function exitGame(){
   CTRL=['human','bot','bot','bot'];
   G.names=[...BOT_NAMES];
   $('#sumModal').classList.add('hidden');$('#overModal').classList.add('hidden');
-  $('#hintBar').classList.add('hidden');$('#projPanel').classList.add('hidden');
+  $('#projPanel').classList.add('hidden');
   $('#emojiPal').classList.add('hidden');
+  clearTimeout(turnTimer); G.ttok++; G.timerEnd=0;
+  clearInterval(tmrInt); document.querySelectorAll('.tmr').forEach(x=>x.remove());
   toggleChat(false); unread=0; $('#chatBadge').classList.add('hidden');
   buildLvlRow();
   showScreen('scrMenu');
@@ -1411,6 +1447,25 @@ buildLvlRow();
   }
 })();
 $('#btnEmoji').addEventListener('click',()=>$('#emojiPal').classList.toggle('hidden'));
+/* زر المساعدة 💡 — يظهر النصيحة فقط عند الطلب */
+$('#btnHint').addEventListener('click',()=>{
+  const v=VIEW;
+  if(!v||!v.act){toast('💡 المساعدة تشتغل لما يكون الدور عليك');return;}
+  if(v.act.type==='bid'){adviseBid();return;}
+  toast('💡 '+(v.act.hint||'العب أي ورقة'));
+  if(NET.role!=='guest'){
+    const c=chooseBotCard(0,10);
+    if(c){
+      document.querySelectorAll('#myHand .card').forEach(x=>x.classList.remove('suggest'));
+      const el2=document.querySelector(`#myHand .card[data-id="${c.id}"]`);
+      if(el2){
+        el2.classList.add('suggest');
+        toast('💡 أنسب ورقة لك: '+c.r+' '+SCHAR[c.s]);
+        setTimeout(()=>el2.classList.remove('suggest'),3000);
+      }
+    }
+  }
+});
 /* ===== الدردشة ===== */
 $('#btnChat').addEventListener('click',()=>toggleChat());
 $('#chatClose').addEventListener('click',()=>toggleChat(false));

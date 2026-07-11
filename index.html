@@ -276,8 +276,6 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
       <input id="playerName" class="field" maxlength="12" placeholder="اسمك على الطاولة (اختياري)">
       <div class="stepLbl" style="text-align:center">🤖 مستوى الخصوم — يرتفع تلقائيًا كل ما فزت بصكّة</div>
       <div class="lvlRow" id="lvlRow"></div>
-      <div class="stepLbl" style="text-align:center">🏁 هدف الصكّة — من يصل له تُعلن الجولة الأخيرة والأعلى نقاطًا يفوز</div>
-      <div class="lvlRow" id="tgtRow"></div>
       <button class="btn gold" id="btnSolo">🎴 العب الآن — ضد الذكاء</button>
       <button class="btn teal" id="btnRemote">🌐 لعب عن بعد مع صديق</button>
       <button class="btn ghost" id="btnRules">📜 طريقة اللعب والحساب</button>
@@ -353,7 +351,6 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
       <div class="chip" id="trickChip" title="الأكلات">🂠 <span id="trickCnt">0 - 0</span></div>
       <div class="chip" id="rpChip" title="نقاط أوراق هذه الجولة">🎯 <span id="rp">0 - 0</span></div>
       <div class="chip" id="lvlChip" title="مستوى الخصوم">🤖 <span id="lvlNum">1</span></div>
-      <div class="chip" id="tgtChip" title="هدف الصكّة">🏁 250</div>
       <button class="iconBtn" id="btnHint" title="مساعدة — وش ألعب؟">💡</button>
       <button class="iconBtn" id="btnEmoji" title="إيموجي">😊</button>
       <button class="iconBtn hidden" id="btnChat" title="دردشة" style="position:relative">💬<span class="badgeN hidden" id="chatBadge">0</span></button>
@@ -410,8 +407,7 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
   <div class="modal hidden" id="rulesModal">
     <div class="box">
       <h2>📜 طريقة اللعب</h2>
-      <p>البلوت لعبة فريقين (أنت وشريكك مقابل الخصمين). الورق 32 ورقة، ولكل لاعب 8. الهدف: جمع النقاط المستهدفة التي تختارونها قبل الصكّة (<b>من 200 إلى 500</b>).</p>
-      <p><b>🔥 الجولة الأخيرة:</b> عند وصول أي فريق للهدف لا تنتهي الصكّة فورًا — تُعلن جولة أخيرة، وبعد نهايتها يفوز صاحب <b>النتيجة الأعلى</b> وليس من وصل للهدف أولًا. وإذا تعادلا تُلعب جولة حاسمة إضافية.</p>
+      <p>البلوت لعبة فريقين (أنت وشريكك مقابل الخصمين). الورق 32 ورقة، ولكل لاعب 8. الهدف: الوصول إلى <b>152 نقطة</b> (أبناط) — وهذا هو القانون المتّبع في البلوت.</p>
       <h3>الشراء</h3>
       <p>توزَّع 5 أوراق وتُكشف ورقة. في الجولة الأولى: <b>حكم</b> بنوع الورقة المكشوفة، أو <b>صن</b> (بدون حكم)، أو <b>أشكل</b>، أو <b>بس</b>. الصن يغطّي الحكم. إذا الكل «بس» تأتي جولة ثانية: حكم بأي نوع آخر أو صن، وإلا يُعاد التوزيع. الشاري يأخذ الورقة المكشوفة، ويجب أن يجمع فريقه أكثر من الخصم وإلا خسر كل شيء.</p>
       <p><b>أشكل 🔄</b>: مثل الصن تمامًا، لكن ورقة الشراء تروح لشريكك بدلك (مفيد إذا الورقة قوية وأنت مستغنٍ عنها). متاح فقط لأول لاعبَين في الجولة الأولى — لأن شريك اللاعب الثالث والرابع يكون قد تكلّم قبلهم.</p>
@@ -468,11 +464,6 @@ let LVL=Math.min(10,Math.max(1,+(store('lvl')||3)||3));
 /* الشريك ما ينزل تحت ٤ عشان ما يخرب عليك */
 function skillOf(p){return p===2?Math.max(LVL,4):LVL;}
 
-/* ===== هدف الصكّة (يُختار قبل المباراة) ===== */
-const TGT_OPTS=[200,250,300,350,400,450,500];
-let TARGET=+(store('target')||250);
-if(!TGT_OPTS.includes(TARGET))TARGET=250;
-
 let CTRL=['human','bot','bot','bot'];   // human | bot | remote
 const G={phase:null,tok:0,ttok:0,timerEnd:0,names:[...BOT_NAMES],match:[0,0]};
 const TURN_SECS=45;
@@ -501,9 +492,7 @@ function maxBy(arr,f){return arr.reduce((a,b)=>f(b)>f(a)?b:a);}
 
 /* ================= محرك اللعبة (يشغّله المضيف فقط) ================= */
 function startMatch(){
-  G.match=[0,0]; G.dealer=2; G.over=null;
-  G.target=TARGET; G.lastRound=false;
-  nextRound();
+  G.match=[0,0]; G.dealer=2; G.over=null; nextRound();
 }
 function nextRound(){
   G.dealer=NXT(G.dealer);
@@ -517,7 +506,6 @@ function nextRound(){
   G.summary=null; G.lastWinner=-1; G.projects=[[],[],[],[]]; G.projDecl=[null,null,null,null];
   G.baloot=-1; G.balootSaid=false; G.seen=new Set();
   G.turn=NXT(G.dealer);
-  if(G.lastRound)toast('🔥 الجولة الأخيرة! اجمعوا أعلى نقاط ممكنة — الأعلى نقاطًا يفوز بالصكّة');
   push(); step();
 }
 function doBid(p,bid){
@@ -735,18 +723,10 @@ function endRound(){
     bn[b]=Math.max(0,pool-bn[o]);
   }
   G.match[0]+=bn[0]; G.match[1]+=bn[1];
-  /* الوصول للهدف لا يُنهي الصكّة فورًا: تُعلن جولة أخيرة، وبعدها يفوز صاحب النتيجة الأعلى */
-  let over=null, finalNext=false;
-  const reached=G.match[0]>=G.target||G.match[1]>=G.target;
-  if(reached){
-    if(G.lastRound){
-      if(G.match[0]!==G.match[1])over=G.match[0]>G.match[1]?0:1;
-      else note=(note?note+' • ':'')+'تعادل بعد الجولة الأخيرة — جولة حاسمة إضافية! 🔥';
-    }else{
-      G.lastRound=true; finalNext=true;
-      note=(note?note+' • ':'')+`🔥 تم الوصول للهدف (${G.target}) — الجولة الجاية هي الأخيرة، والأعلى نقاطًا بعدها يفوز. شدّوا حيلكم!`;
-    }
-  }
+  /* قانون البلوت: أول فريق يصل 152 يفوز (يُحسب بنهاية الجولة)، وإذا وصلا معًا فالأعلى، والتعادل يكمل */
+  let over=null;
+  if((G.match[0]>=152||G.match[1]>=152)&&G.match[0]!==G.match[1])
+    over=G.match[0]>G.match[1]?0:1;
   G.over=over;
   /* الانتقال التلقائي بين المستويات: فوز = مستوى أعلى، خسارة = مستوى أسهل */
   let lvlMsg='';
@@ -760,7 +740,7 @@ function endRound(){
   }
   G.summary={bn,pts:[G.teamPts[0]*mult,G.teamPts[1]*mult],pj,pjN,note,over,kaboot,pool,raw,
              mode:G.mode,trump:G.trump,buyer:G.buyer,match:[...G.match],balootTeam,lvlMsg,
-             tricks:[...G.teamTricks],target:G.target,finalNext,lastRound:G.lastRound};
+             tricks:[...G.teamTricks]};
   G.phase='summary'; G.turn=-1;
   snd('round');
   push();
@@ -931,7 +911,6 @@ function buildView(s){
     trick:G.trick||[], teamTricks:G.teamTricks||[0,0], teamPts:G.teamPts||[0,0],
     match:[...G.match], bidLog:G.bidLog||['','','',''],
     act, projAsk, lvl:LVL, summary:G.summary, over:G.over,
-    target:G.target||TARGET, lastRound:!!G.lastRound,
     timerSecs:G.timerEnd?Math.max(0,Math.ceil((G.timerEnd-Date.now())/1000)):null
   };
 }
@@ -963,8 +942,6 @@ function render(v){
   $('#rp').textContent=`${v.teamPts?v.teamPts[myT]:0} - ${v.teamPts?v.teamPts[1-myT]:0}`;
   $('#rpChip').style.display=(v.phase==='play')?'flex':'none';
   $('#lvlNum').textContent=v.lvl||LVL;
-  $('#tgtChip').textContent=v.lastRound?'🔥 الجولة الأخيرة':'🏁 '+(v.target||TARGET);
-  $('#tgtChip').style.borderColor=v.lastRound?'var(--sadu)':'';
   $('#btnChat').classList.toggle('hidden',!NET.role);
   $('#chatIn').disabled=!chatAvail();
   $('#chatIn').placeholder=chatAvail()?'اكتب رسالة…':'الدردشة تفتح بعد نهاية الجولة';
@@ -1147,8 +1124,7 @@ function renderSummary(v){
   const isHost=NET.role!=='guest';
   const sun=s.mode==='sun';
   const pjTxt=t=>s.pjN&&s.pjN[t]&&s.pjN[t].length?s.pjN[t].join('، '):'لا يوجد';
-  const tgt=s.target||TARGET;
-  const pct=x=>Math.min(100,Math.round(x/tgt*100));
+  const pct=x=>Math.min(100,Math.round(x/152*100));
   $('#sumBox').innerHTML=`
     <h2>🧮 حسبة الجولة</h2>
     <p style="text-align:center;margin-top:0">${sun?'صن ☀️ (كل النقاط ×٢)':'حكم '+SCHAR[s.trump]} — الشاري: <b>${v.names[s.buyer]}</b> • الأكلات: لنا ${s.tricks?s.tricks[myT]:''} / لهم ${s.tricks?s.tricks[otT]:''}</p>
@@ -1162,7 +1138,7 @@ function renderSummary(v){
       <div class="col"><div class="n" style="color:#e0938c">${s.bn[otT]}</div><div class="t">أبناط لهم هذه الجولة</div></div>
     </div>
     <div class="raceWrap">
-      <div class="raceLbl"><span>لنا ${s.match[myT]}</span><span>${s.finalNext||s.lastRound?'🔥':'🏁'} الهدف ${tgt}</span></div>
+      <div class="raceLbl"><span>لنا ${s.match[myT]}</span><span>🏁 الهدف 152</span></div>
       <div class="race us"><i style="width:${pct(s.match[myT])}%"></i></div>
       <div class="raceLbl"><span>لهم ${s.match[otT]}</span><span></span></div>
       <div class="race them"><i style="width:${pct(s.match[otT])}%"></i></div>
@@ -1742,19 +1718,6 @@ function buildLvlRow(){
   }
 }
 buildLvlRow();
-function buildTgtRow(){
-  const row=$('#tgtRow'); if(!row)return;
-  row.innerHTML='';
-  for(const t of TGT_OPTS){
-    const b=document.createElement('button');
-    b.className='lvlBtn'+(t===TARGET?' on':'');
-    b.textContent=t;
-    b.style.width='46px';
-    b.addEventListener('click',()=>{TARGET=t;store('target',String(t));buildTgtRow();});
-    row.appendChild(b);
-  }
-}
-buildTgtRow();
 /* ===== لوحة الإيموجي ===== */
 (function(){
   const pal=$('#emojiPal');

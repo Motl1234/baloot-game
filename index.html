@@ -276,6 +276,8 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
       <input id="playerName" class="field" maxlength="12" placeholder="اسمك على الطاولة (اختياري)">
       <div class="stepLbl" style="text-align:center">🤖 مستوى الخصوم — يرتفع تلقائيًا كل ما فزت بصكّة</div>
       <div class="lvlRow" id="lvlRow"></div>
+      <div class="stepLbl" style="text-align:center">🏁 هدف الصكّة — من يصل له تُعلن الجولة الأخيرة والأعلى نقاطًا يفوز</div>
+      <div class="lvlRow" id="tgtRow"></div>
       <button class="btn gold" id="btnSolo">🎴 العب الآن — ضد الذكاء</button>
       <button class="btn teal" id="btnRemote">🌐 لعب عن بعد مع صديق</button>
       <button class="btn ghost" id="btnRules">📜 طريقة اللعب والحساب</button>
@@ -296,6 +298,7 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
         <div id="roomBox" class="hidden" style="text-align:center">
           <div class="stepLbl" style="text-align:center">رمز الغرفة — أرسله لأصدقائك (حتى ٣):</div>
           <div class="roomCode" id="roomCode">----</div>
+          <button class="btn teal small" id="btnShareWA">📱 مشاركة عبر واتساب</button>
           <button class="btn ghost small" id="btnCopyRoom">📋 نسخ الرمز</button>
           <div id="joinedList" class="joined"></div>
         </div>
@@ -350,6 +353,7 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
       <div class="chip" id="trickChip" title="الأكلات">🂠 <span id="trickCnt">0 - 0</span></div>
       <div class="chip" id="rpChip" title="نقاط أوراق هذه الجولة">🎯 <span id="rp">0 - 0</span></div>
       <div class="chip" id="lvlChip" title="مستوى الخصوم">🤖 <span id="lvlNum">1</span></div>
+      <div class="chip" id="tgtChip" title="هدف الصكّة">🏁 250</div>
       <button class="iconBtn" id="btnHint" title="مساعدة — وش ألعب؟">💡</button>
       <button class="iconBtn" id="btnEmoji" title="إيموجي">😊</button>
       <button class="iconBtn hidden" id="btnChat" title="دردشة" style="position:relative">💬<span class="badgeN hidden" id="chatBadge">0</span></button>
@@ -406,7 +410,8 @@ table.sc td.hl{color:var(--gold2);font-weight:800;font-size:16px}
   <div class="modal hidden" id="rulesModal">
     <div class="box">
       <h2>📜 طريقة اللعب</h2>
-      <p>البلوت لعبة فريقين (أنت وشريكك مقابل الخصمين). الورق 32 ورقة، ولكل لاعب 8. الهدف: الوصول إلى <b>152 نقطة</b> (أبناط).</p>
+      <p>البلوت لعبة فريقين (أنت وشريكك مقابل الخصمين). الورق 32 ورقة، ولكل لاعب 8. الهدف: جمع النقاط المستهدفة التي تختارونها قبل الصكّة (<b>من 200 إلى 500</b>).</p>
+      <p><b>🔥 الجولة الأخيرة:</b> عند وصول أي فريق للهدف لا تنتهي الصكّة فورًا — تُعلن جولة أخيرة، وبعد نهايتها يفوز صاحب <b>النتيجة الأعلى</b> وليس من وصل للهدف أولًا. وإذا تعادلا تُلعب جولة حاسمة إضافية.</p>
       <h3>الشراء</h3>
       <p>توزَّع 5 أوراق وتُكشف ورقة. في الجولة الأولى: <b>حكم</b> بنوع الورقة المكشوفة، أو <b>صن</b> (بدون حكم)، أو <b>أشكل</b>، أو <b>بس</b>. الصن يغطّي الحكم. إذا الكل «بس» تأتي جولة ثانية: حكم بأي نوع آخر أو صن، وإلا يُعاد التوزيع. الشاري يأخذ الورقة المكشوفة، ويجب أن يجمع فريقه أكثر من الخصم وإلا خسر كل شيء.</p>
       <p><b>أشكل 🔄</b>: مثل الصن تمامًا، لكن ورقة الشراء تروح لشريكك بدلك (مفيد إذا الورقة قوية وأنت مستغنٍ عنها). متاح فقط لأول لاعبَين في الجولة الأولى — لأن شريك اللاعب الثالث والرابع يكون قد تكلّم قبلهم.</p>
@@ -463,13 +468,18 @@ let LVL=Math.min(10,Math.max(1,+(store('lvl')||3)||3));
 /* الشريك ما ينزل تحت ٤ عشان ما يخرب عليك */
 function skillOf(p){return p===2?Math.max(LVL,4):LVL;}
 
+/* ===== هدف الصكّة (يُختار قبل المباراة) ===== */
+const TGT_OPTS=[200,250,300,350,400,450,500];
+let TARGET=+(store('target')||250);
+if(!TGT_OPTS.includes(TARGET))TARGET=250;
+
 let CTRL=['human','bot','bot','bot'];   // human | bot | remote
 const G={phase:null,tok:0,ttok:0,timerEnd:0,names:[...BOT_NAMES],match:[0,0]};
 const TURN_SECS=45;
 /* عنوان خادم الغرف (Cloudflare Worker) — الطريقة اليدوية تعمل بدونه */
 const RELAY_URL='wss://baloot-relay.mohammed-almutlaq-1983-459.workers.dev';
 const NET={role:null,mode:null,pc:null,dc:null,ws:null,seat:2,connected:false,guestName:'',
-           guests:new Map(),roomCode:''};
+           guests:new Map(),roomCode:'',closing:false,pingInt:null,reconnT:null,everJoined:false};
 /* كل المقاعد البعيدة المتصلة (عند المضيف) مع دالة إرسال لكل مقعد */
 function remoteTargets(){
   if(NET.role!=='host')return [];
@@ -491,7 +501,9 @@ function maxBy(arr,f){return arr.reduce((a,b)=>f(b)>f(a)?b:a);}
 
 /* ================= محرك اللعبة (يشغّله المضيف فقط) ================= */
 function startMatch(){
-  G.match=[0,0]; G.dealer=2; G.over=null; nextRound();
+  G.match=[0,0]; G.dealer=2; G.over=null;
+  G.target=TARGET; G.lastRound=false;
+  nextRound();
 }
 function nextRound(){
   G.dealer=NXT(G.dealer);
@@ -505,6 +517,7 @@ function nextRound(){
   G.summary=null; G.lastWinner=-1; G.projects=[[],[],[],[]]; G.projDecl=[null,null,null,null];
   G.baloot=-1; G.balootSaid=false; G.seen=new Set();
   G.turn=NXT(G.dealer);
+  if(G.lastRound)toast('🔥 الجولة الأخيرة! اجمعوا أعلى نقاط ممكنة — الأعلى نقاطًا يفوز بالصكّة');
   push(); step();
 }
 function doBid(p,bid){
@@ -722,9 +735,18 @@ function endRound(){
     bn[b]=Math.max(0,pool-bn[o]);
   }
   G.match[0]+=bn[0]; G.match[1]+=bn[1];
-  let over=null;
-  if((G.match[0]>=152||G.match[1]>=152)&&G.match[0]!==G.match[1])
-    over=G.match[0]>G.match[1]?0:1;
+  /* الوصول للهدف لا يُنهي الصكّة فورًا: تُعلن جولة أخيرة، وبعدها يفوز صاحب النتيجة الأعلى */
+  let over=null, finalNext=false;
+  const reached=G.match[0]>=G.target||G.match[1]>=G.target;
+  if(reached){
+    if(G.lastRound){
+      if(G.match[0]!==G.match[1])over=G.match[0]>G.match[1]?0:1;
+      else note=(note?note+' • ':'')+'تعادل بعد الجولة الأخيرة — جولة حاسمة إضافية! 🔥';
+    }else{
+      G.lastRound=true; finalNext=true;
+      note=(note?note+' • ':'')+`🔥 تم الوصول للهدف (${G.target}) — الجولة الجاية هي الأخيرة، والأعلى نقاطًا بعدها يفوز. شدّوا حيلكم!`;
+    }
+  }
   G.over=over;
   /* الانتقال التلقائي بين المستويات: فوز = مستوى أعلى، خسارة = مستوى أسهل */
   let lvlMsg='';
@@ -738,7 +760,7 @@ function endRound(){
   }
   G.summary={bn,pts:[G.teamPts[0]*mult,G.teamPts[1]*mult],pj,pjN,note,over,kaboot,pool,raw,
              mode:G.mode,trump:G.trump,buyer:G.buyer,match:[...G.match],balootTeam,lvlMsg,
-             tricks:[...G.teamTricks]};
+             tricks:[...G.teamTricks],target:G.target,finalNext,lastRound:G.lastRound};
   G.phase='summary'; G.turn=-1;
   snd('round');
   push();
@@ -909,6 +931,7 @@ function buildView(s){
     trick:G.trick||[], teamTricks:G.teamTricks||[0,0], teamPts:G.teamPts||[0,0],
     match:[...G.match], bidLog:G.bidLog||['','','',''],
     act, projAsk, lvl:LVL, summary:G.summary, over:G.over,
+    target:G.target||TARGET, lastRound:!!G.lastRound,
     timerSecs:G.timerEnd?Math.max(0,Math.ceil((G.timerEnd-Date.now())/1000)):null
   };
 }
@@ -940,6 +963,8 @@ function render(v){
   $('#rp').textContent=`${v.teamPts?v.teamPts[myT]:0} - ${v.teamPts?v.teamPts[1-myT]:0}`;
   $('#rpChip').style.display=(v.phase==='play')?'flex':'none';
   $('#lvlNum').textContent=v.lvl||LVL;
+  $('#tgtChip').textContent=v.lastRound?'🔥 الجولة الأخيرة':'🏁 '+(v.target||TARGET);
+  $('#tgtChip').style.borderColor=v.lastRound?'var(--sadu)':'';
   $('#btnChat').classList.toggle('hidden',!NET.role);
   $('#chatIn').disabled=!chatAvail();
   $('#chatIn').placeholder=chatAvail()?'اكتب رسالة…':'الدردشة تفتح بعد نهاية الجولة';
@@ -1122,7 +1147,8 @@ function renderSummary(v){
   const isHost=NET.role!=='guest';
   const sun=s.mode==='sun';
   const pjTxt=t=>s.pjN&&s.pjN[t]&&s.pjN[t].length?s.pjN[t].join('، '):'لا يوجد';
-  const pct=x=>Math.min(100,Math.round(x/152*100));
+  const tgt=s.target||TARGET;
+  const pct=x=>Math.min(100,Math.round(x/tgt*100));
   $('#sumBox').innerHTML=`
     <h2>🧮 حسبة الجولة</h2>
     <p style="text-align:center;margin-top:0">${sun?'صن ☀️ (كل النقاط ×٢)':'حكم '+SCHAR[s.trump]} — الشاري: <b>${v.names[s.buyer]}</b> • الأكلات: لنا ${s.tricks?s.tricks[myT]:''} / لهم ${s.tricks?s.tricks[otT]:''}</p>
@@ -1136,7 +1162,7 @@ function renderSummary(v){
       <div class="col"><div class="n" style="color:#e0938c">${s.bn[otT]}</div><div class="t">أبناط لهم هذه الجولة</div></div>
     </div>
     <div class="raceWrap">
-      <div class="raceLbl"><span>لنا ${s.match[myT]}</span><span>🏁 الهدف 152</span></div>
+      <div class="raceLbl"><span>لنا ${s.match[myT]}</span><span>${s.finalNext||s.lastRound?'🔥':'🏁'} الهدف ${tgt}</span></div>
       <div class="race us"><i style="width:${pct(s.match[myT])}%"></i></div>
       <div class="raceLbl"><span>لهم ${s.match[otT]}</span><span></span></div>
       <div class="race them"><i style="width:${pct(s.match[otT])}%"></i></div>
@@ -1395,8 +1421,23 @@ function guestMsg(m){
   }
   else if(m.t==='emoji')showEmoji(m.seat|0,String(m.e||'').slice(0,4));
   else if(m.t==='chat'&&chatAvail())addChat(m.name||'صديقي',String(m.text||'').slice(0,140),false);
-  else if(m.t==='err')gRoomStatus(m.m==='full'?'الغرفة ممتلئة ✖ (٣ ضيوف كحد أقصى)':'ما فيه غرفة بهذا الرمز — تأكد أن المضيف أنشأها أولًا ✖');
-  else if(m.t==='hostGone'){toast('المضيف أغلق الغرفة ✖');gRoomStatus('المضيف أغلق الغرفة');}
+  else if(m.t==='err'){
+    gRoomStatus(m.m==='full'?'الغرفة ممتلئة ✖ (٣ ضيوف كحد أقصى)':'ما فيه غرفة بهذا الرمز — تأكد أن المضيف أنشأها أولًا ✖');
+    /* فشل الانضمام الأول: أوقف محاولات إعادة الاتصال */
+    if(!NET.everJoined){
+      NET.closing=true;
+      try{if(NET.ws)NET.ws.close();}catch(_){}
+      clearTimeout(NET.reconnT);NET.reconnT=null;
+      NET.role=null;NET.mode=null;NET.closing=false;
+    }
+  }
+  else if(m.t==='hostGone'){
+    /* لا نطرد الضيف — المضيف قد يكون بدّل تطبيقًا للمشاركة وسيرجع */
+    toast('المضيف انقطع مؤقتًا ⏳ ننتظر رجوعه…');
+    gRoomStatus('المضيف انقطع مؤقتًا — بانتظار رجوعه (لا تسكّر الصفحة)');
+  }
+  else NET.everJoined=true;
+  if(m.t==='state')NET.everJoined=true;
 }
 function onNet(m){
   if(NET.role==='host'){
@@ -1417,11 +1458,18 @@ function makeRoomCode(){
   return s;
 }
 function relayReady(){return RELAY_URL.startsWith('wss://')&&!RELAY_URL.includes('REPLACE');}
-function hostRoom(){
-  if(!relayReady()){roomStatus('خادم الغرف غير مفعّل بعد ✖ — استخدم الطريقة اليدوية');return;}
-  if(NET.ws){try{NET.ws.close();}catch(_){}}
-  NET.role='host';NET.mode='ws';NET.guests=new Map();NET.roomCode=makeRoomCode();
-  roomStatus('جارٍ فتح الغرفة…');
+/* نبضات كل ٢٥ ثانية تمنع إغلاق الاتصال الخامل (خصوصًا على الجوال) */
+function startPing(){
+  clearInterval(NET.pingInt);
+  NET.pingInt=setInterval(()=>{
+    try{
+      if(!NET.ws||NET.ws.readyState!==1)return;
+      if(NET.role==='host')NET.ws.send(JSON.stringify({to:'all',m:{t:'ping'}}));
+      else NET.ws.send(JSON.stringify({t:'ping'}));
+    }catch(_){}
+  },25000);
+}
+function connectHost(isReconnect){
   let ws;
   try{ws=new WebSocket(`${RELAY_URL}/room/${NET.roomCode}/ws?role=host&name=${encodeURIComponent(myName())}`);}
   catch(e){roomStatus('تعذّر الاتصال بالخادم ✖');return;}
@@ -1429,8 +1477,11 @@ function hostRoom(){
   ws.onopen=()=>{
     $('#roomCode').textContent=NET.roomCode;
     $('#roomBox').classList.remove('hidden');
-    roomStatus('الغرفة جاهزة ✔ شارك الرمز مع أصدقائك');
+    roomStatus(isReconnect?'رجع الاتصال بالغرفة ✔':'الغرفة جاهزة ✔ شارك الرمز — لو طلعت من الصفحة نرجّعك تلقائيًا');
+    if(isReconnect)toast('رجع الاتصال بالغرفة ✔');
+    startPing();
     refreshJoined();
+    if(G.phase)push();
   };
   ws.onmessage=e=>{
     let d;try{d=JSON.parse(e.data);}catch(_){return;}
@@ -1442,12 +1493,28 @@ function hostRoom(){
     }
   };
   ws.onclose=ws.onerror=()=>{
-    if(NET.ws!==ws||NET.role!=='host'||NET.mode!=='ws')return;
-    roomStatus('انقطع الاتصال بالخادم ✖ — إذا فتحت اللعبة من رابط claude.ai استخدم الطريقة اليدوية');
+    if(NET.ws!==ws||NET.role!=='host'||NET.mode!=='ws'||NET.closing)return;
+    roomStatus('انقطع الاتصال — نحاول الرجوع تلقائيًا ⏳');
+    /* الذكاء يكمل مؤقتًا مكان الضيوف، وعند رجوع الاتصال يستلمون مقاعدهم */
     for(const g of NET.guests.values())if(g.seat!=null&&CTRL[g.seat]==='remote')CTRL[g.seat]='bot';
-    NET.guests.clear();refreshJoined();
+    NET.guests=new Map();refreshJoined();
     if(G.phase&&G.turn>=0)step();
+    clearTimeout(NET.reconnT);
+    NET.reconnT=setTimeout(()=>{
+      if(NET.role==='host'&&NET.mode==='ws'&&!NET.closing)connectHost(true);
+    },2500);
   };
+}
+function hostRoom(){
+  if(!relayReady()){roomStatus('خادم الغرف غير مفعّل بعد ✖ — استخدم الطريقة اليدوية');return;}
+  NET.closing=true;
+  if(NET.ws){try{NET.ws.close();}catch(_){}}
+  clearTimeout(NET.reconnT);NET.reconnT=null;
+  NET.closing=false;
+  NET.role='host';NET.mode='ws';NET.guests=new Map();
+  if(!NET.roomCode)NET.roomCode=makeRoomCode();
+  roomStatus('جارٍ فتح الغرفة…');
+  connectHost(false);
 }
 function onGuestJoin(id,name){
   name=(name||'').slice(0,12)||('ضيف '+id);
@@ -1484,24 +1551,47 @@ function refreshJoined(){
     ||'<div class="jrow dim">بانتظار انضمام الأصدقاء… (أول منضم يكون شريكك)</div>';
   const sb=$('#btnStartRoom');if(sb)sb.disabled=NET.guests.size===0;
 }
+function connectGuest(isReconnect){
+  let ws;
+  try{ws=new WebSocket(`${RELAY_URL}/room/${NET.roomCode}/ws?role=guest&name=${encodeURIComponent(myName())}`);}
+  catch(e){gRoomStatus('تعذّر الاتصال بالخادم ✖');return;}
+  NET.ws=ws;
+  ws.onopen=()=>{
+    gRoomStatus(isReconnect?'رجع الاتصال ✔':'انضممت ✔ بانتظار المضيف يبدأ اللعب…');
+    if(isReconnect)toast('رجع الاتصال ✔');
+    startPing();
+  };
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch(_){return;}guestMsg(m);};
+  ws.onclose=ws.onerror=()=>{
+    if(NET.ws!==ws||NET.role!=='guest'||NET.mode!=='ws'||NET.closing)return;
+    gRoomStatus('انقطع الاتصال — نحاول الرجوع تلقائيًا ⏳');
+    clearTimeout(NET.reconnT);
+    NET.reconnT=setTimeout(()=>{
+      if(NET.role==='guest'&&NET.mode==='ws'&&!NET.closing)connectGuest(true);
+    },2500);
+  };
+}
 function joinRoom(){
   if(!relayReady()){gRoomStatus('خادم الغرف غير مفعّل بعد ✖ — استخدم الطريقة اليدوية');return;}
   const code=($('#roomIn').value||'').trim().toUpperCase();
   if(!/^[A-Z0-9]{4,8}$/.test(code)){gRoomStatus('اكتب رمز الغرفة (٤ رموز) ✖');return;}
+  NET.closing=true;
   if(NET.ws){try{NET.ws.close();}catch(_){}}
-  NET.role='guest';NET.mode='ws';
+  clearTimeout(NET.reconnT);NET.reconnT=null;
+  NET.closing=false;
+  NET.role='guest';NET.mode='ws';NET.roomCode=code;NET.everJoined=false;
   gRoomStatus('جارٍ الانضمام…');
-  let ws;
-  try{ws=new WebSocket(`${RELAY_URL}/room/${code}/ws?role=guest&name=${encodeURIComponent(myName())}`);}
-  catch(e){gRoomStatus('تعذّر الاتصال بالخادم ✖');return;}
-  NET.ws=ws;
-  ws.onopen=()=>gRoomStatus('انضممت ✔ بانتظار المضيف يبدأ اللعب…');
-  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch(_){return;}guestMsg(m);};
-  ws.onclose=ws.onerror=()=>{
-    if(NET.ws!==ws||NET.role!=='guest')return;
-    gRoomStatus('انقطع الاتصال ✖ — إذا فتحت اللعبة من رابط claude.ai استخدم الطريقة اليدوية');
-  };
+  connectGuest(false);
 }
+/* عند الرجوع للصفحة (مثلاً بعد مشاركة الرمز بالواتساب) أعد الاتصال فورًا */
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  if(NET.mode!=='ws'||!NET.roomCode||NET.closing)return;
+  if(NET.ws&&NET.ws.readyState<=1)return;
+  clearTimeout(NET.reconnT);NET.reconnT=null;
+  if(NET.role==='host')connectHost(true);
+  else if(NET.role==='guest')connectGuest(true);
+});
 async function hostCreate(){
   try{
     if(NET.ws){try{NET.ws.close();}catch(_){}NET.ws=null;}
@@ -1549,8 +1639,12 @@ function showScreen(id){
 function myName(){return ($('#playerName').value||'').trim().slice(0,12)||'أنت';}
 function exitGame(){
   G.phase=null; G.tok++;
+  NET.closing=true;
   if(NET.pc){try{NET.pc.close();}catch(_){}NET.pc=null;NET.dc=null;}
   if(NET.ws){try{NET.ws.close();}catch(_){}NET.ws=null;}
+  clearInterval(NET.pingInt);NET.pingInt=null;
+  clearTimeout(NET.reconnT);NET.reconnT=null;
+  NET.closing=false;NET.everJoined=false;
   NET.guests=new Map();NET.mode=null;NET.roomCode='';
   const rb=$('#roomBox');if(rb)rb.classList.add('hidden');
   roomStatus('');gRoomStatus('');
@@ -1597,6 +1691,13 @@ $('#btnCopyRoom').addEventListener('click',()=>{
     navigator.clipboard.writeText(c).then(done).catch(done);
   else done();
 });
+$('#btnShareWA').addEventListener('click',()=>{
+  const code=NET.roomCode||$('#roomCode').textContent;
+  const link=location.href.split('#')[0].split('?')[0];
+  const msg=`تعال نلعب بلوت 🃏\n١) افتح الرابط: ${link}\n٢) اختر «لعب عن بعد» ثم «أنا الضيف»\n٣) أدخل رمز الغرفة: ${code}`;
+  if(navigator.share){navigator.share({text:msg}).catch(()=>{});return;}
+  window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+});
 $('#btnJoinRoom').addEventListener('click',joinRoom);
 $('#roomIn').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom();});
 $('#btnStartRoom').addEventListener('click',()=>{
@@ -1641,6 +1742,19 @@ function buildLvlRow(){
   }
 }
 buildLvlRow();
+function buildTgtRow(){
+  const row=$('#tgtRow'); if(!row)return;
+  row.innerHTML='';
+  for(const t of TGT_OPTS){
+    const b=document.createElement('button');
+    b.className='lvlBtn'+(t===TARGET?' on':'');
+    b.textContent=t;
+    b.style.width='46px';
+    b.addEventListener('click',()=>{TARGET=t;store('target',String(t));buildTgtRow();});
+    row.appendChild(b);
+  }
+}
+buildTgtRow();
 /* ===== لوحة الإيموجي ===== */
 (function(){
   const pal=$('#emojiPal');
